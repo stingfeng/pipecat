@@ -277,12 +277,15 @@ class STTService(AIService):
         if self._content.tell() > 0 and (
                 buffer_secs > self._max_buffer_secs or silence_secs > self._max_silence_secs):
             self._silence_num_frames = 0
-            self._wave.close()
-            self._content.seek(0)
-            await self.start_processing_metrics()
-            await self.process_generator(self.run_stt(self._content.read()))
-            await self.stop_processing_metrics()
+
+            content, wave = self._content, self._wave
             (self._content, self._wave) = self._new_wave()
+            
+            wave.close()
+            content.seek(0)
+            await self.start_processing_metrics()
+            await self.process_generator(self.run_stt(content.read()))
+            await self.stop_processing_metrics()
 
     async def stop(self, frame: EndFrame):
         self._wave.close()

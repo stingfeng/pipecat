@@ -33,6 +33,8 @@ try:
         DeepgramClientOptions,
         LiveTranscriptionEvents,
         LiveOptions,
+        LiveResultResponse,
+        ErrorResponse
     )
 except ModuleNotFoundError as e:
     logger.error(f"Exception: {e}")
@@ -130,7 +132,10 @@ class DeepgramSTTService(AsyncAIService):
         self._client = DeepgramClient(
             api_key, config=DeepgramClientOptions(url=url, options={"keepalive": "true"}))
         self._connection = self._client.listen.asynclive.v("1")
+        #FIXME(stingfeng): bugfix: avoiding referencing _socket without initialization
+        self._connection._socket = None
         self._connection.on(LiveTranscriptionEvents.Transcript, self._on_message)
+        self._connection.on(LiveTranscriptionEvents.Error, self._on_error)
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -158,7 +163,7 @@ class DeepgramSTTService(AsyncAIService):
         await self._connection.finish()
 
     async def _on_message(self, *args, **kwargs):
-        result = kwargs["result"]
+        result: LiveResultResponse = kwargs["result"]
         is_final = result.is_final
         transcript = result.channel.alternatives[0].transcript
         if len(transcript) > 0:
@@ -166,3 +171,6 @@ class DeepgramSTTService(AsyncAIService):
                 await self.queue_frame(TranscriptionFrame(transcript, "", time_now_iso8601()))
             else:
                 await self.queue_frame(InterimTranscriptionFrame(transcript, "", time_now_iso8601()))
+
+    async def _on_error(self, *args, **kwargs):
+        error: ErrorResponse = kwargs["error"]
