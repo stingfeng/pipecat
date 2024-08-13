@@ -96,7 +96,8 @@ class BaseInputTransport(FrameProcessor):
         # Control frames
         elif isinstance(frame, StartFrame):
             await self.start(frame)
-            await self._internal_push_frame(frame, direction)
+            await self.push_frame(frame, direction)
+            # await self._internal_push_frame(frame, direction)
         elif isinstance(frame, EndFrame):
             # Push EndFrame before stop(), because stop() waits on the task to
             # finish and the task finishes when EndFrame is processed.

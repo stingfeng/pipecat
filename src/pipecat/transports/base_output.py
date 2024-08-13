@@ -141,8 +141,9 @@ class BaseOutputTransport(FrameProcessor):
             await self.push_frame(frame, direction)
         # Control frames.
         elif isinstance(frame, StartFrame):
-            await self._sink_queue.put(frame)
+            # await self._sink_queue.put(frame)
             await self.start(frame)
+            await self.push_frame(frame, direction)
         elif isinstance(frame, EndFrame):
             await self._sink_queue.put(frame)
             await self.stop(frame)

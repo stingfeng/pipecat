@@ -18,6 +18,7 @@ from pipecat.frames.frames import (
     MetricsFrame,
     StartFrame,
     SystemFrame,
+    ControlFrame,
     TranscriptionFrame)
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.ai_services import AsyncAIService, TTSService
@@ -137,6 +138,8 @@ class DeepgramSTTService(AsyncAIService):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, SystemFrame):
+            await self.push_frame(frame, direction)
+        elif isinstance(frame, ControlFrame):
             await self.push_frame(frame, direction)
         elif isinstance(frame, AudioRawFrame):
             await self._connection.send(frame.audio)
