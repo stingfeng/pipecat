@@ -10,6 +10,7 @@ import os
 import sys
 
 from pipecat.frames.frames import Frame, LLMMessagesFrame, MetricsFrame
+from pipecat.metrics.metrics import TTFBMetricsData, ProcessingMetricsData, LLMUsageMetricsData, TTSUsageMetricsData
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -18,8 +19,7 @@ from pipecat.processors.aggregators.llm_response import (
     LLMUserResponseAggregator,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.processors.logger import FrameLogger
-from pipecat.services.elevenlabs import ElevenLabsTTSService
+from pipecat.services.cartesia import CartesiaTTSService
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
 from pipecat.vad.silero import SileroVADAnalyzer
@@ -38,8 +38,19 @@ logger.add(sys.stderr, level="DEBUG")
 class MetricsLogger(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         if isinstance(frame, MetricsFrame):
-            print(
-                f"!!! MetricsFrame: {frame}, ttfb: {frame.ttfb}, processing: {frame.processing}, tokens: {frame.tokens}, characters: {frame.characters}")
+            for d in frame.data:
+                if isinstance(d, TTFBMetricsData):
+                    print(f"!!! MetricsFrame: {frame}, ttfb: {d.value}")
+                elif isinstance(d, ProcessingMetricsData):
+                    print(f"!!! MetricsFrame: {frame}, processing: {d.value}")
+                elif isinstance(d, LLMUsageMetricsData):
+                    tokens = d.value
+                    print(
+                        f"!!! MetricsFrame: {frame}, tokens: {
+                            tokens.prompt_tokens}, characters: {
+                            tokens.completion_tokens}")
+                elif isinstance(d, TTSUsageMetricsData):
+                    print(f"!!! MetricsFrame: {frame}, characters: {d.value}")
         await self.push_frame(frame, direction)
 
 
@@ -59,10 +70,9 @@ async def main():
             )
         )
 
-        tts = ElevenLabsTTSService(
-            aiohttp_session=session,
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-            voice_id=os.getenv("ELEVENLABS_VOICE_ID"),
+        tts = CartesiaTTSService(
+            api_key=os.getenv("CARTESIA_API_KEY"),
+            voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Lady
         )
 
         llm = OpenAILLMService(
@@ -92,11 +102,6 @@ async def main():
         ])
 
         task = PipelineTask(pipeline)
-        task = PipelineTask(pipeline, PipelineParams(
-            allow_interruptions=True,
-            enable_metrics=True,
-            report_only_initial_ttfb=False,
-        ))
 
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):

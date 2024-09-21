@@ -49,14 +49,15 @@ class Sink(FrameProcessor):
                 await self._down_queue.put(frame)
 
 
-class ParallelTask(BasePipeline):
+class SyncParallelPipeline(BasePipeline):
     def __init__(self, *args):
         super().__init__()
 
         if len(args) == 0:
-            raise Exception(f"ParallelTask needs at least one argument")
+            raise Exception(f"SyncParallelPipeline needs at least one argument")
 
         self._sinks = []
+        self._sources = []
         self._pipelines = []
 
         self._up_queue = asyncio.Queue()
@@ -65,15 +66,15 @@ class ParallelTask(BasePipeline):
         logger.debug(f"Creating {self} pipelines")
         for processors in args:
             if not isinstance(processors, list):
-                raise TypeError(f"ParallelTask argument {processors} is not a list")
+                raise TypeError(f"SyncParallelPipeline argument {processors} is not a list")
 
             # We add a source at the beginning of the pipeline and a sink at the end.
             source = Source(self._up_queue)
             sink = Sink(self._down_queue)
-            processors: List[FrameProcessor] = [source] + processors
-            processors.append(sink)
+            processors: List[FrameProcessor] = [source] + processors + [sink]
 
-            # Keep track of sinks. We access the source through the pipeline.
+            # Keep track of sources and sinks.
+            self._sources.append(source)
             self._sinks.append(sink)
 
             # Create pipeline
@@ -99,8 +100,8 @@ class ParallelTask(BasePipeline):
             # If we get an upstream frame we process it in each sink.
             await asyncio.gather(*[s.process_frame(frame, direction) for s in self._sinks])
         elif direction == FrameDirection.DOWNSTREAM:
-            # If we get a downstream frame we process it in each source (using the pipeline).
-            await asyncio.gather(*[p.process_frame(frame, direction) for p in self._pipelines])
+            # If we get a downstream frame we process it in each source.
+            await asyncio.gather(*[s.process_frame(frame, direction) for s in self._sources])
 
         seen_ids = set()
         while not self._up_queue.empty():

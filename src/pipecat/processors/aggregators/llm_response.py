@@ -4,9 +4,9 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-from typing import List
+from typing import List, Type
 
-from pipecat.services.openai import OpenAILLMContextFrame, OpenAILLMContext
+from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContextFrame, OpenAILLMContext
 
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.frames.frames import (
@@ -17,6 +17,7 @@ from pipecat.frames.frames import (
     LLMMessagesAppendFrame,
     LLMMessagesFrame,
     LLMMessagesUpdateFrame,
+    LLMSetToolsFrame,
     StartInterruptionFrame,
     TranscriptionFrame,
     TextFrame,
@@ -33,8 +34,8 @@ class LLMResponseAggregator(FrameProcessor):
         role: str,
         start_frame,
         end_frame,
-        accumulator_frame: TextFrame,
-        interim_accumulator_frame: TextFrame | None = None,
+        accumulator_frame: Type[TextFrame],
+        interim_accumulator_frame: Type[TextFrame] | None = None,
         handle_interruptions: bool = False
     ):
         super().__init__()
@@ -107,7 +108,7 @@ class LLMResponseAggregator(FrameProcessor):
             await self.push_frame(frame, direction)
         elif isinstance(frame, self._accumulator_frame):
             if self._aggregating:
-                self._aggregation += f" {frame.text}"
+                self._aggregation += f" {frame.text}" if self._aggregation else frame.text
                 # We have recevied a complete sentence, so if we have seen the
                 # end frame and we were still aggregating, it means we should
                 # send the aggregation.
@@ -123,18 +124,11 @@ class LLMResponseAggregator(FrameProcessor):
             self._reset()
             await self.push_frame(frame, direction)
         elif isinstance(frame, LLMMessagesAppendFrame):
-            self._messages.extend(frame.messages)
-            messages_frame = LLMMessagesFrame(self._messages)
-            await self.push_frame(messages_frame)
+            self._add_messages(frame.messages)
         elif isinstance(frame, LLMMessagesUpdateFrame):
-            # We push the frame downstream so the assistant aggregator gets
-            # updated as well.
-            await self.push_frame(frame)
-            # We can now reset this one.
-            self._reset()
-            self._messages = frame.messages
-            messages_frame = LLMMessagesFrame(self._messages)
-            await self.push_frame(messages_frame)
+            self._set_messages(frame.messages)
+        elif isinstance(frame, LLMSetToolsFrame):
+            self._set_tools(frame.tools)
         else:
             await self.push_frame(frame, direction)
 
@@ -151,6 +145,19 @@ class LLMResponseAggregator(FrameProcessor):
 
             frame = LLMMessagesFrame(self._messages)
             await self.push_frame(frame)
+
+    # TODO-CB: Types
+    def _add_messages(self, messages):
+        self._messages.extend(messages)
+
+    def _set_messages(self, messages):
+        self._reset()
+        self._messages.clear()
+        self._messages.extend(messages)
+
+    def _set_tools(self, tools):
+        # noop in the base class
+        pass
 
     def _reset(self):
         self._aggregation = ""
@@ -240,9 +247,29 @@ class LLMFullResponseAggregator(FrameProcessor):
 
 class LLMContextAggregator(LLMResponseAggregator):
     def __init__(self, *, context: OpenAILLMContext, **kwargs):
-
-        self._context = context
         super().__init__(**kwargs)
+        self._context = context
+
+    @property
+    def context(self):
+        return self._context
+
+    def get_context_frame(self) -> OpenAILLMContextFrame:
+        return OpenAILLMContextFrame(context=self._context)
+
+    async def push_context_frame(self):
+        frame = self.get_context_frame()
+        await self.push_frame(frame)
+
+    # TODO-CB: Types
+    def _add_messages(self, messages):
+        self._context.add_messages(messages)
+
+    def _set_messages(self, messages):
+        self._context.set_messages(messages)
+
+    def _set_tools(self, tools: List):
+        self._context.set_tools(tools)
 
     async def _push_aggregation(self):
         if len(self._aggregation) > 0:

@@ -13,10 +13,11 @@ from PIL import Image
 
 from pipecat.frames.frames import (
     ImageRawFrame,
+    OutputImageRawFrame,
     SpriteFrame,
     Frame,
     LLMMessagesFrame,
-    AudioRawFrame,
+    TTSAudioRawFrame,
     TTSStoppedFrame,
     TextFrame,
     UserImageRawFrame,
@@ -31,7 +32,7 @@ from pipecat.processors.aggregators.llm_response import LLMUserResponseAggregato
 from pipecat.processors.aggregators.sentence import SentenceAggregator
 from pipecat.processors.aggregators.vision_image_frame import VisionImageFrameAggregator
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.services.elevenlabs import ElevenLabsTTSService
+from pipecat.services.cartesia import CartesiaTTSService
 from pipecat.services.moondream import MoondreamService
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
@@ -59,7 +60,11 @@ for i in range(1, 26):
     # Get the filename without the extension to use as the dictionary key
     # Open the image and convert it to bytes
     with Image.open(full_path) as img:
-        sprites.append(ImageRawFrame(image=img.tobytes(), size=img.size, format=img.format))
+        sprites.append(OutputImageRawFrame(
+            image=img.tobytes(),
+            size=img.size,
+            format=img.format)
+        )
 
 flipped = sprites[::-1]
 sprites.extend(flipped)
@@ -82,7 +87,7 @@ class TalkingAnimation(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
 
-        if isinstance(frame, AudioRawFrame):
+        if isinstance(frame, TTSAudioRawFrame):
             if not self._is_talking:
                 await self.push_frame(talking_frame)
                 self._is_talking = True
@@ -153,10 +158,9 @@ async def main():
             )
         )
 
-        tts = ElevenLabsTTSService(
-            aiohttp_session=session,
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-            voice_id="pNInz6obpgDQGcFmaJgB",
+        tts = CartesiaTTSService(
+            api_key=os.getenv("CARTESIA_API_KEY"),
+            voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Lady
         )
 
         llm = OpenAILLMService(

@@ -11,8 +11,7 @@ import wave
 from typing import Awaitable, Callable
 from pydantic.main import BaseModel
 
-from pipecat.frames.frames import AudioRawFrame, CancelFrame, EndFrame, StartFrame
-from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.frames.frames import AudioRawFrame, CancelFrame, EndFrame, InputAudioRawFrame, StartFrame
 from pipecat.serializers.base_serializer import FrameSerializer
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.transports.base_input import BaseInputTransport
@@ -98,9 +97,13 @@ class WebsocketServerInputTransport(BaseInputTransport):
                 continue
 
             if isinstance(frame, AudioRawFrame):
-                await self.push_audio_frame(frame)
+                await self.push_audio_frame(InputAudioRawFrame(
+                    audio=frame.audio,
+                    sample_rate=frame.sample_rate,
+                    num_channels=frame.num_channels)
+                )
             else:
-                await self._internal_push_frame(frame)
+                await self.push_frame(frame)
 
         # Notify disconnection
         await self._callbacks.on_client_disconnected(websocket)
@@ -120,7 +123,7 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
 
         self._websocket: websockets.WebSocketServerProtocol | None = None
 
-        self._audio_buffer = bytes()
+        self._websocket_audio_buffer = bytes()
 
     async def set_client_connection(self, websocket: websockets.WebSocketServerProtocol | None):
         if self._websocket:
@@ -132,10 +135,10 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
         if not self._websocket:
             return
 
-        self._audio_buffer += frames
-        while len(self._audio_buffer) >= self._params.audio_frame_size:
+        self._websocket_audio_buffer += frames
+        while len(self._websocket_audio_buffer) >= self._params.audio_frame_size:
             frame = AudioRawFrame(
-                audio=self._audio_buffer[:self._params.audio_frame_size],
+                audio=self._websocket_audio_buffer[:self._params.audio_frame_size],
                 sample_rate=self._params.audio_out_sample_rate,
                 num_channels=self._params.audio_out_channels
             )
@@ -159,7 +162,7 @@ class WebsocketServerOutputTransport(BaseOutputTransport):
             if proto:
                 await self._websocket.send(proto)
 
-            self._audio_buffer = self._audio_buffer[self._params.audio_frame_size:]
+            self._websocket_audio_buffer = self._websocket_audio_buffer[self._params.audio_frame_size:]
 
 
 class WebsocketServerTransport(BaseTransport):
@@ -190,13 +193,13 @@ class WebsocketServerTransport(BaseTransport):
         self._register_event_handler("on_client_connected")
         self._register_event_handler("on_client_disconnected")
 
-    def input(self) -> FrameProcessor:
+    def input(self) -> WebsocketServerInputTransport:
         if not self._input:
             self._input = WebsocketServerInputTransport(
                 self._host, self._port, self._params, self._callbacks, name=self._input_name)
         return self._input
 
-    def output(self) -> FrameProcessor:
+    def output(self) -> WebsocketServerOutputTransport:
         if not self._output:
             self._output = WebsocketServerOutputTransport(self._params, name=self._output_name)
         return self._output
