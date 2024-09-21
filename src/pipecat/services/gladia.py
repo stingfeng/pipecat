@@ -56,6 +56,7 @@ class GladiaSTTService(AsyncAIService):
         self._url = url
         self._params = params
         self._confidence = confidence
+        self._websocket = None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -75,11 +76,13 @@ class GladiaSTTService(AsyncAIService):
 
     async def stop(self, frame: EndFrame):
         await super().stop(frame)
-        await self._websocket.close()
+        if self._websocket:
+            await self._websocket.close()
 
     async def cancel(self, frame: CancelFrame):
         await super().cancel(frame)
-        await self._websocket.close()
+        if self._websocket:
+            await self._websocket.close()
 
     async def _setup_gladia(self):
         configuration = {
@@ -93,6 +96,8 @@ class GladiaSTTService(AsyncAIService):
         await self._websocket.send(json.dumps(configuration))
 
     async def _send_audio(self, frame: AudioRawFrame):
+        if not self._websocket:
+            return
         message = {
             'frames': base64.b64encode(frame.audio).decode("utf-8")
         }
