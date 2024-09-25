@@ -772,9 +772,9 @@ class DailyTransport(BaseTransport):
     def __init__(
             self,
             room_url: str,
-            token: str | None,
             bot_name: str,
             params: DailyParams = DailyParams(),
+            token: str | None = None,
             input_name: str | None = None,
             output_name: str | None = None,
             loop: asyncio.AbstractEventLoop | None = None):
